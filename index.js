@@ -26,6 +26,8 @@ function getImageExtension(contentType, imageUrl) {
     'image/jpg': '.jpg',
     'image/webp': '.webp',
     'image/gif': '.gif',
+    'image/avif': '.avif',
+    'image/svg+xml': '.svg',
   };
 
   const fromType = contentTypeMap[(contentType || '').toLowerCase()];
@@ -34,6 +36,28 @@ function getImageExtension(contentType, imageUrl) {
   const cleanUrl = (imageUrl || '').split('?')[0].toLowerCase();
   const ext = path.extname(cleanUrl);
   return ext || '.png';
+}
+
+function resolveDownloadUrl(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return rawUrl;
+  }
+
+  if (parsed.hostname === 'external-content.duckduckgo.com') {
+    const original = parsed.searchParams.get('u');
+    if (original) {
+      try {
+        return decodeURIComponent(original);
+      } catch {
+        return original;
+      }
+    }
+  }
+
+  return rawUrl;
 }
 
 function normalizeForSearch(value) {
@@ -45,14 +69,21 @@ function normalizeForSearch(value) {
 }
 
 async function downloadPokemonImage(imageUrl) {
-  const response = await fetch(imageUrl);
+  const resolvedUrl = resolveDownloadUrl(imageUrl);
+  const response = await fetch(resolvedUrl, {
+    headers: {
+      'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+      accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      referer: 'https://duckduckgo.com/',
+    },
+  });
   if (!response.ok) {
-    throw new Error(`Image download failed with status ${response.status}`);
+    throw new Error(`Image download failed (${response.status}) from ${resolvedUrl}`);
   }
 
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.toLowerCase().startsWith('image/')) {
-    throw new Error('Provided URL does not point to an image');
+    throw new Error(`Provided URL did not return an image (content-type: ${contentType || 'unknown'})`);
   }
 
   return {
