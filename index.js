@@ -36,6 +36,14 @@ function getImageExtension(contentType, imageUrl) {
   return ext || '.png';
 }
 
+function normalizeForSearch(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 async function downloadPokemonImage(imageUrl) {
   const response = await fetch(imageUrl);
   if (!response.ok) {
@@ -136,17 +144,15 @@ app.get('/pokemonsSearch', async (req, res) => {
       return res.json([]);
     }
 
-    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const nameRegex = new RegExp(escaped, "i");
-
-    const pokemons = await pokemon
-      .find({
-        $or: [
-          { "name.english": { $regex: nameRegex } },
-          { "name.french": { $regex: nameRegex } },
-        ],
+    const normalizedQuery = normalizeForSearch(name);
+    const allPokemons = await pokemon.find({}).limit(1000).lean();
+    const pokemons = allPokemons
+      .filter((p) => {
+        const english = normalizeForSearch(p?.name?.english);
+        const french = normalizeForSearch(p?.name?.french);
+        return english.includes(normalizedQuery) || french.includes(normalizedQuery);
       })
-      .limit(50);
+      .slice(0, 50);
 
     res.json(pokemons);
   } catch (error) {
